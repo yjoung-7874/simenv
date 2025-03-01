@@ -1,0 +1,55 @@
+FROM nvcr.io/nvidia/isaac-sim:4.5.0
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Use Kakao mirror and install necessary packages
+RUN sed -i 's@archive.ubuntu.com@mirror.kakao.com@g' /etc/apt/sources.list \
+    && apt update \
+    && apt remove -y --purge libbrotli1 libbrotli-dev \
+    && apt install -y libbrotli1=1.0.9-2build6 libbrotli-dev \
+    && apt install -y build-essential git wget cmake vim curl gnupg2 lsb-release \
+    && apt install -y libglfw3-dev libudev-dev libopencv-dev \
+    && apt install -y bash bash-completion libreadline-dev libncurses5-dev \
+    && apt install -y libzmq3-dev libmodbus-dev x11-apps libyaml-cpp-dev
+
+RUN apt install -y tmux
+COPY config/.tmux.conf /root/
+
+RUN apt install -y libssl-dev python3-dev python3-pip \
+    && apt clean
+
+# ROS
+ENV ROS_DISTRO=humble
+RUN apt update \
+    && apt install -y locales \
+    && locale-gen en_US en_US.UTF-8 \
+    && update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+
+ENV LANG=en_US.UTF-8
+RUN apt install -y software-properties-common \
+    && add-apt-repository universe
+
+RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key | apt-key add -
+RUN echo "deb http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/ros2-latest.list
+RUN apt update
+RUN apt install -y ros-humble-ros-base ros-dev-tools
+
+RUN apt install -y \
+    ros-${ROS_DISTRO}-navigation2 ros-${ROS_DISTRO}-nav2-bringup \
+    ros-${ROS_DISTRO}-cartographer ros-${ROS_DISTRO}-cartographer-ros \
+    ros-${ROS_DISTRO}-test-msgs \
+    ros-${ROS_DISTRO}-rviz2 \
+    ros-${ROS_DISTRO}-gazebo-ros ros-${ROS_DISTRO}-gazebo-ros-pkgs \
+    ros-${ROS_DISTRO}-dynamixel-sdk ros-${ROS_DISTRO}-turtlebot3-msgs \
+    ros-${ROS_DISTRO}-iceoryx-binding-c ros-${ROS_DISTRO}-rmw-cyclonedds-cpp 
+
+# Install Python tools for development
+RUN apt install -y python3-colcon-common-extensions \
+    && pip3 install -U wheel colcon-ros-bundle setuptools==57.5.0
+
+RUN rosdep init \
+    && rosdep update --rosdistro ${ROS_DISTRO}
+
+WORKDIR /simenv
+
+CMD ["/bin/bash", "-c", "source /root/.bashrc"]

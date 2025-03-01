@@ -1,0 +1,1 @@
+sudo unminimize -y
