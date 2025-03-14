@@ -36,14 +36,14 @@ xhost +local:docker
 
 docker run --name="${USER}_${NOW}" --runtime=nvidia --gpus all -e "ACCEPT_EULA=Y" \
   --rm -it --privileged --network="host" \
-  -v ${HOME}/docker/isaac-sim/cache/kit:/isaac-sim/kit/cache:rw \
-  -v ${HOME}/docker/isaac-sim/cache/ov:/root/.cache/ov:rw \
-  -v ${HOME}/docker/isaac-sim/cache/pip:/root/.cache/pip:rw \
-  -v ${HOME}/docker/isaac-sim/cache/glcache:/root/.cache/nvidia/GLCache:rw \
-  -v ${HOME}/docker/isaac-sim/cache/computecache:/root/.nv/ComputeCache:rw \
-  -v ${HOME}/docker/isaac-sim/logs:/root/.nvidia-omniverse/logs:rw \
-  -v ${HOME}/docker/isaac-sim/data:/root/.local/share/ov/data:rw \
-  -v ${HOME}/docker/isaac-sim/documents:/root/Documents:rw \
+  -v ${HOME}/nvidia/docker/isaac-sim/cache/kit:/isaac-sim/kit/cache:rw \
+  -v ${HOME}/nvidia/docker/isaac-sim/cache/ov:/root/.cache/ov:rw \
+  -v ${HOME}/nvidia/docker/isaac-sim/cache/pip:/root/.cache/pip:rw \
+  -v ${HOME}/nvidia/docker/isaac-sim/cache/glcache:/root/.cache/nvidia/GLCache:rw \
+  -v ${HOME}/nvidia/docker/isaac-sim/cache/computecache:/root/.nv/ComputeCache:rw \
+  -v ${HOME}/nvidia/docker/isaac-sim/logs:/root/.nvidia-omniverse/logs:rw \
+  -v ${HOME}/nvidia/docker/isaac-sim/data:/root/.local/share/ov/data:rw \
+  -v ${HOME}/nvidia/docker/isaac-sim/documents:/root/Documents:rw \
   --env "PRIVACY_CONSENT=Y" \
   -v ${PROJECT_ROOT}:/devenv/projects \
   -v ${ENTRY_PATH}:/entry \
@@ -55,7 +55,5 @@ docker run --name="${USER}_${NOW}" --runtime=nvidia --gpus all -e "ACCEPT_EULA=Y
   --entrypoint /entry/entry.sh \
     ${IMAGE}
 
-
-    docker run --name isaac-sim --entrypoint bash -it --rm --network=host \
-
-    nvcr.io/nvidia/isaac-sim:4.5.0
+#docker run --name isaac-sim --entrypoint bash -it --rm --network=host \
+#  nvcr.io/nvidia/isaac-sim:4.5.0
