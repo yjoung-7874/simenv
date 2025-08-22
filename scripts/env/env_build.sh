@@ -8,8 +8,8 @@ print_usage () {
   echo "Usage:"
   echo "  $0 [-h|--help] [--platform <architecture>...] image-name dockerfile-path"
   echo "  $0 [-h|--help] [--platform <architecture>...] (-e docker/podman) (-m image-name1 -m image-name2 ...) dockerfile-path"
-  echo "    e.g.,; $0 --platform linux/arm64/v8,linux/amd64 ubuntu_jammy /path/to/dockerfile"
-  echo "           $0 -e podman --platform linux/arm64/v8,linux/amd64 -m ubuntu_jammy -m ros2_humble /path/to/dockerfile"
+  echo "    e.g.,; $0 --platform linux/amd64 isaac_ros2 ../../dockerfiles"
+  echo "           $0 -e podman --platform linux/arm64/v8,linux/amd64 -m isaac_ros2 -m ros2_humble /path/to/dockerfile"
   echo ""
   echo "  arguments:"
   echo "    image-name      : Dockerfile.{image-name}"
@@ -57,10 +57,6 @@ while [[ "$#" -gt 0 ]]; do
   esac
 done
 
-# DEBUGGING - check options
-echo "Positional Arguments: ${POSITIONAL_ARGS[@]}"
-echo "Platforms: $PLATFORMS"
-
 # Check if Buildx is available
 if ! ${CONTAINER_ENGINE} buildx version &>/dev/null; then
   echo "ERROR: Buildx is not available. Please ensure Docker Buildx is installed."
@@ -81,11 +77,18 @@ fi
 IMAGE_NAME="${POSITIONAL_ARGS[0]}"
 DOCKERFILE_PATH="${POSITIONAL_ARGS[1]}"
 
+# DEBUGGING - check options
+echo "Positional Arguments: ${POSITIONAL_ARGS[@]}"
+echo "Platforms: $PLATFORMS"
+echo "Image name: ${IMAGE_NAME}"
+echo "Dockerfile path: ${DOCKERFILE_PATH}"
+
 IFS=',' read -r -a platforms <<< "$PLATFORMS"
 
 for platform in "${platforms[@]}"; do
   echo "platform : ${platform}"
   PLATFORM_FLAG="--platform=${platform}"
   tag_name="${platform//\//_}"
+  echo "Tag name: ${tag_name}"
   ${CONTAINER_ENGINE} buildx build $PLATFORM_FLAG -t "${IMAGE_NAME}:${tag_name}" --load -f "${DOCKERFILE_PATH}/${IMAGE_NAME}/Dockerfile.${IMAGE_NAME}_${tag_name}" "${DOCKERFILE_PATH}"
 done
