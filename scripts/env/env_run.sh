@@ -45,7 +45,7 @@ docker run --name="${USER}_${NOW}" --runtime=nvidia --gpus all -e "ACCEPT_EULA=Y
   -v ${HOME}/nvidia/docker/isaac-sim/data:/root/.local/share/ov/data:rw \
   -v ${HOME}/nvidia/docker/isaac-sim/documents:/root/Documents:rw \
   --env "PRIVACY_CONSENT=Y" \
-  -v ${PROJECT_ROOT}:/devenv/projects \
+  -v ${PROJECT_ROOT}:/simenv/projects \
   -v ${ENTRY_PATH}:/entry \
   -v /dev:/dev \
   -v /tmp/.X11-unix:/tmp/.X11-unix:rw \

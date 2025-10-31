@@ -10,13 +10,11 @@ RUN sed -i 's@archive.ubuntu.com@mirror.kakao.com@g' /etc/apt/sources.list \
     && apt install -y build-essential git wget cmake vim curl gnupg2 lsb-release \
     && apt install -y libglfw3-dev libudev-dev libopencv-dev \
     && apt install -y bash bash-completion libreadline-dev libncurses5-dev \
-    && apt install -y libzmq3-dev libmodbus-dev x11-apps libyaml-cpp-dev
+    && apt install -y libzmq3-dev libmodbus-dev x11-apps libyaml-cpp-dev \
+    && apt install -y libssl-dev python3-dev python3-pip
 
 RUN apt install -y tmux
 COPY config/.tmux.conf /root/
-
-RUN apt install -y libssl-dev python3-dev python3-pip \
-    && apt clean
 
 # ROS
 ENV ROS_DISTRO=humble
@@ -49,6 +47,19 @@ RUN apt install -y python3-colcon-common-extensions \
 
 RUN rosdep init \
     && rosdep update --rosdistro ${ROS_DISTRO}
+
+    # CUDA repository 추가
+RUN apt-get update && apt-get install -y wget gnupg \
+    && wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb \
+    && dpkg -i cuda-keyring_1.1-1_all.deb \
+    && apt-get update
+
+RUN apt install -y cuda-toolkit-12-8 \
+    && apt clean
+
+ENV CUDA_HOME=/usr/local/cuda
+ENV PATH=$CUDA_HOME/bin:$PATH
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64
 
 WORKDIR /simenv
 
