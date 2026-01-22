@@ -1,0 +1,1 @@
+./env_run.sh isaac_ros2:linux_amd64 /home/yjoung/Workspace/ys_ws/dev/DLPR
