@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
 # simenv/scripts/env/run.sh
 #
-# Isaac Sim 시뮬레이션 환경 실행 (ROS 2 브리지 활성화)
+# Isaac Sim 시뮬레이션 환경 실행
+#
+#   이 스크립트는 **컨테이너 런처**다. Isaac Sim 이미지를 어떻게 띄울지만 안다.
+#   어떤 시나리오를 실행하고 ROS 2 브리지 extension 을 켤지는
+#   시나리오 소유자(mos 등)가 결정해 넘긴다.
 #
 #   Isaac Sim 은 내장 ROS 2 브리지 라이브러리를 갖고 있으므로,
-#   이미지에 ROS 2 를 설치할 필요가 없다. ROS_DISTRO 만 맞추면 된다.
-#   통신은 DDS 가 담당하고 --network=host 로 호스트/다른 컨테이너와 연결된다.
+#   이미지에 ROS 2 를 설치할 필요가 없다. 통신은 DDS 가 담당하고
+#   --network=host 로 호스트/다른 컨테이너와 연결된다.
 #
 # 모드:
 #   gui      : 로컬 디스플레이에 창을 띄운다 (개발자 로컬 검증)
 #   stream   : headless + WebRTC livestream (원격 개발자, 브라우저/클라이언트 접속)
 #   headless : 창 없이 스크립트만 실행하고 exit code 로 판정 (CI)
-#   shell    : 브리지가 설정된 대화형 bash (직접 명령 실행 / 디버깅)
+#   shell    : 대화형 bash (직접 명령 실행 / 디버깅)
 #
 # Usage:
 #   run.sh [-h] --image <key> [--mode gui|stream|headless|shell]
@@ -21,15 +25,19 @@
 #   --image      : catalog.yml 의 이미지 키 (예: isaac-ros2-5.0-jazzy)
 #   --mode       : 실행 모드 (default: gui)
 #   --workspace  : 호스트 디렉토리 -> 컨테이너 /workspace (default: $PWD)
-#   --script     : headless 모드에서 실행할 스크립트 (컨테이너 경로)
+#   --script     : headless 모드에서 실행할 명령 (컨테이너 셸 문자열)
 #   --cache-dir  : Isaac Sim 캐시 루트 (default: $HOME/docker/isaac-sim)
 #   --timeout    : headless 모드 타임아웃 (초, default: 600)
+#   --           : 이후 인자는 Isaac Sim 에 그대로 전달된다
 #
 # Examples:
-#   run.sh --image isaac-ros2-5.0-jazzy --mode gui
-#   run.sh --image isaac-ros2-5.0-jazzy --mode shell        # 브리지 설정된 셸
+#   # 시나리오 + 브리지 extension (권장 — 브리지는 호출자가 켠다)
 #   run.sh --image isaac-ros2-5.0-jazzy --mode headless \
-#          --workspace ./scenarios --script /workspace/smoke.py
+#          --workspace ./sim --script "/isaac-sim/python.sh /workspace/bridge_smoke.py" \
+#          -- --/isaac/startup/ros_bridge_extension=isaacsim.ros2.bridge
+#
+#   run.sh --image isaac-ros2-5.0-jazzy --mode gui          # GUI (브리지 없이)
+#   run.sh --image isaac-ros2-5.0-jazzy --mode shell        # 디버깅 셸
 
 set -o errexit
 set -o pipefail
@@ -99,8 +107,9 @@ WORKSPACE="$(realpath "$WORKSPACE")"
 mkdir -p "${CACHE_DIR}"/{cache/main,cache/computecache,cache/kit,config,data,logs,pkg}
 chown -R 1234:1234 "${CACHE_DIR}" 2>/dev/null || true
 
-# Isaac Sim 실행 파일 + ROS 2 브리지 extension 활성화
-ISAAC_BRIDGE_FLAG="--/isaac/startup/ros_bridge_extension=isaacsim.ros2.bridge"
+# ROS 2 브리지 extension 활성화 여부는 **시나리오 소유자(mos 등)** 가 정한다.
+#   어떤 토픽을 어떻게 연결할지 아는 쪽이 결정할 문제이므로 여기서 강제하지 않는다.
+#   예) run.sh ... -- --/isaac/startup/ros_bridge_extension=isaacsim.ros2.bridge
 
 # ---------------------------------------------------------------------------
 # 공통 docker run 인자
@@ -129,7 +138,7 @@ RUN_ARGS=(
 
 [[ -n "$CONTAINER_NAME" ]] && RUN_ARGS+=(--name "$CONTAINER_NAME")
 
-echo -e "\033[32;1msimenv: ${IMAGE_NAME} (${MODE}, ROS 2 ${ROS_DISTRO} bridge)\033[0m"
+echo -e "\033[32;1msimenv: ${IMAGE_NAME} (${MODE}, ROS 2 ${ROS_DISTRO} available)\033[0m"
 
 case "$MODE" in
   gui)
@@ -144,9 +153,9 @@ case "$MODE" in
       -e "DISPLAY=${DISPLAY}"
       -e "QT_X11_NO_MITSHM=1"
     )
-    echo "  starting Isaac Sim (GUI) with ROS 2 bridge..."
+    echo "  starting Isaac Sim (GUI)..."
     docker run -it "${RUN_ARGS[@]}" \
-      --entrypoint /isaac-sim/isaac-sim.sh "$TAG" "${ISAAC_BRIDGE_FLAG}" "${ISAAC_ARGS[@]}"
+      --entrypoint /isaac-sim/isaac-sim.sh "$TAG" "${ISAAC_ARGS[@]}"
     ;;
 
   stream)
@@ -157,7 +166,7 @@ case "$MODE" in
     )
     echo "  stream: ${ISAACSIM_HOST:-127.0.0.1} (signal 49100 / media 47998)"
     docker run -it "${RUN_ARGS[@]}" \
-      --entrypoint /isaac-sim/runheadless.sh "$TAG" -v "${ISAAC_BRIDGE_FLAG}" "${ISAAC_ARGS[@]}"
+      --entrypoint /isaac-sim/runheadless.sh "$TAG" -v "${ISAAC_ARGS[@]}"
     ;;
 
   headless)
