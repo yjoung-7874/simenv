@@ -97,9 +97,25 @@ extension 을 켤지는 시나리오 소유자(예: `mos/sim/run-sim.sh`)가 `--
 호스트에 네트워크 인터페이스가 여러 개면 FastDDS 가 잘못된 인터페이스를 골라
 **외부 노드와 전혀 통신이 안 되는** 증상이 생긴다 (컨테이너 내부 pub/sub 는 정상).
 이미지에는 `/etc/simenv/fastdds.xml` 이 포함되어 있고 `run.sh` 가 기본으로 지정한다.
+이 기본 프로필은 화이트리스트가 비어 있어 **모든 인터페이스**를 쓴다 — 단일 NIC
+환경에서는 이대로 동작한다.
 
-특정 인터페이스를 강제하려면 `dockerfiles/isaac-ros2/fastdds.xml` 의
-`interfaceWhiteList` 주석을 풀고 실제 LAN 주소를 넣은 뒤 재빌드한다.
+다중 NIC 환경(검증된 이 호스트: enp5s0 + eno1 + docker bridge 다수)에서는
+인터페이스를 명시해야 외부와 통신된다. `dockerfiles/isaac-ros2/fastdds.xml` 의
+`interfaceWhiteList` 주석을 풀고 실제 LAN 주소(예: `192.168.0.3`)를 넣은 뒤 재빌드한다.
+
+```bash
+# 검증 결과: 화이트리스트 없이는 컨테이너 내부 loopback 만 되고
+#           호스트 ↔ 컨테이너 통신이 전혀 안 됨. 화이트리스트를 넣으면 통신됨.
+```
+
+### ROS 2 배포판 선택 (ROS_DISTRO)
+
+`run.sh` 는 `ROS_DISTRO` 를 컨테이너에 **넘기지 않는다**. Isaac Sim 의
+`setup_ros_env.sh` 가 `ROS_DISTRO` 를 비워둘 때만 내장 라이브러리 경로를 잡기
+때문이다(값이 있으면 브리지가 `libament_index_cpp.so` 를 못 찾아 startup 실패).
+대신 `run.sh` 가 Isaac Sim 실행 직전에 `/usr/local/bin/ros2-env <distro>` 를
+소싱해 `LD_LIBRARY_PATH`/`PYTHONPATH`/`AMENT_PREFIX_PATH` 를 설정한다.
 
 ## Python 버전 제약 (중요)
 

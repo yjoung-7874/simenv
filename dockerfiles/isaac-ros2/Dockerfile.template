@@ -12,9 +12,10 @@
 #     /isaac-sim/exts/isaacsim.ros2.bridge/{humble,jazzy}/{lib,rclpy}
 #   따라서 이미지에 ROS 2 를 따로 설치하거나 빌드할 필요가 없다.
 #
-#   ROS_DISTRO 만 설정하면 setup_ros_env.sh 가 그 배포판의 내장 라이브러리를
-#   LD_LIBRARY_PATH 에 추가한다. 통신은 DDS(--network=host)가 담당하므로
-#   호스트/다른 컨테이너의 ROS 2 노드와 그대로 연결된다.
+#   ROS_DISTRO 를 **설정하지 않으면** setup_ros_env.sh 가 OS 에 맞는 기본
+#   배포판(humble)의 내장 라이브러리 경로를 LD_LIBRARY_PATH 에 넣는다.
+#   jazzy 를 쓰려면 ros2-env 로 명시 지정한다. 통신은 DDS(--network=host)가
+#   담당하므로 호스트/다른 컨테이너의 ROS 2 노드와 그대로 연결된다.
 #
 #   베이스 이미지: nvcr.io/nvidia/isaac-sim:5.0.0
 #     → Ubuntu 22.04 (jammy), Python 3.11, root
@@ -25,10 +26,11 @@ FROM nvcr.io/nvidia/isaac-sim:${ISAAC_VERSION}
 ARG ROS_DISTRO=jazzy
 
 ENV DEBIAN_FRONTEND=noninteractive
-# 주의: ROS_DISTRO 를 여기서 ENV 로 고정하면 안 된다.
-#   Isaac Sim 의 setup_ros_env.sh 는 ROS_DISTRO 가 **비어 있을 때만**
-#   내장 브리지 라이브러리 경로를 LD_LIBRARY_PATH 에 추가한다.
-#   따라서 브리지 배포판 선택은 실행 시점(run.sh)에서 넘긴다.
+# 주의: ROS_DISTRO 를 ENV 로 고정하면 안 된다.
+#   setup_ros_env.sh 는 ROS_DISTRO 가 **비어 있을 때만** 내장 브리지
+#   라이브러리 경로를 LD_LIBRARY_PATH 에 추가한다. 값이 있으면 아무것도
+#   하지 않아 브리지 extension 이 libament_index_cpp.so 를 못 찾는다.
+#   따라서 배포판 선택은 실행 시점(run.sh 의 ros2-env)에서 넘긴다.
 # ENV ROS_DISTRO=...
 
 # ---------------------------------------------------------------------------

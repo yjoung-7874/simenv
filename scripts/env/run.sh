@@ -122,7 +122,10 @@ RUN_ARGS=(
   --privileged
   -e "ACCEPT_EULA=Y"
   -e "PRIVACY_CONSENT=Y"
-  -e "ROS_DISTRO=${ROS_DISTRO}"
+  # ROS_DISTRO 는 **넘기지 않는다**. Isaac Sim 의 setup_ros_env.sh 는
+  # ROS_DISTRO 가 비어 있을 때만 내장 브리지 라이브러리 경로를
+  # LD_LIBRARY_PATH 에 넣는다. 값이 있으면 브리지 extension 이
+  # libament_index_cpp.so 를 찾지 못해 startup 에 실패한다 (검증됨).
   -e "RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
   -e "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}"
   -e "FASTRTPS_DEFAULT_PROFILES_FILE=${FASTRTPS_DEFAULT_PROFILES_FILE:-/etc/simenv/fastdds.xml}"
@@ -140,6 +143,15 @@ RUN_ARGS=(
 
 echo -e "\033[32;1msimenv: ${IMAGE_NAME} (${MODE}, ROS 2 ${ROS_DISTRO} available)\033[0m"
 
+# ---------------------------------------------------------------------------
+# ROS 2 배포판 선택
+#   run.sh 는 ROS_DISTRO 를 컨테이너에 넘기지 않는다(위 주석 참조).
+#   대신 Isaac Sim 실행 **직전**에 ros2-env 를 소싱해 jazzy 경로를 잡는다.
+#   ros2-env 는 LD_LIBRARY_PATH/PYTHONPATH/AMENT_PREFIX_PATH 를 설정하며,
+#   이 환경에서 Isaac Sim 이 시작되므로 브리지 extension 도 정상 로드된다.
+# ---------------------------------------------------------------------------
+ROS_ENV="source /usr/local/bin/ros2-env ${ROS_DISTRO}"
+
 case "$MODE" in
   gui)
     if [[ -z "${DISPLAY:-}" ]]; then
@@ -155,7 +167,7 @@ case "$MODE" in
     )
     echo "  starting Isaac Sim (GUI)..."
     docker run -it "${RUN_ARGS[@]}" \
-      --entrypoint /isaac-sim/isaac-sim.sh "$TAG" "${ISAAC_ARGS[@]}"
+      --entrypoint /bin/bash "$TAG" -lc "${ROS_ENV} && /isaac-sim/isaac-sim.sh $(printf '%q ' "${ISAAC_ARGS[@]}")"
     ;;
 
   stream)
@@ -166,29 +178,52 @@ case "$MODE" in
     )
     echo "  stream: ${ISAACSIM_HOST:-127.0.0.1} (signal 49100 / media 47998)"
     docker run -it "${RUN_ARGS[@]}" \
-      --entrypoint /isaac-sim/runheadless.sh "$TAG" -v "${ISAAC_ARGS[@]}"
+      --entrypoint /bin/bash "$TAG" -lc "${ROS_ENV} && /isaac-sim/runheadless.sh -v $(printf '%q ' "${ISAAC_ARGS[@]}")"
     ;;
 
   headless)
     echo "  script: ${RUN_SCRIPT} (timeout ${TIMEOUT}s)"
+    # 주의: `bash -lc "<script>" <args...>` 에서 첫 인자는 $0 가 되고 이후는 $1.. 이 된다.
+    #       Isaac Sim 인자를 문자열 뒤에 붙이면 $0 로 먹혀 사라지므로
+    #       ros2-env 소싱 + 스크립트 + 인자를 하나의 셸 문자열로 합쳐 전달한다.
+    CMD="${ROS_ENV} && ${RUN_SCRIPT}"
+    if [[ ${#ISAAC_ARGS[@]} -gt 0 ]]; then
+      CMD="${CMD} $(printf '%q ' "${ISAAC_ARGS[@]}")"
+    fi
+    # Isaac Sim 은 Python 예외를 삼키고 종료 코드 0 을 돌려주는 경우가 있다.
+    #   CI 판정을 신뢰하려면 로그도 함께 본다. 시나리오가 실패를 알리는
+    #   표준 방식은 (a) 0 이 아닌 종료 코드, (b) "FAIL:" / "SMOKE_OK" 출력 중
+    #   하나다. 여기서는 (a) 와 치명 오류 패턴만 검사한다.
+    LOG="$(mktemp)"
     set +e
     timeout "$TIMEOUT" docker run "${RUN_ARGS[@]}" \
-      --entrypoint /bin/bash "$TAG" -lc "$RUN_SCRIPT" "${ISAAC_ARGS[@]}"
-    rc=$?
+      --entrypoint /bin/bash "$TAG" -lc "$CMD" 2>&1 | tee "$LOG"
+    rc=${PIPESTATUS[0]}
     set -e
     if [[ $rc -eq 124 ]]; then
       echo "ERROR: headless run timed out after ${TIMEOUT}s" >&2
+      rm -f "$LOG"
+      exit 124
     elif [[ $rc -ne 0 ]]; then
       echo "ERROR: headless run failed (rc=${rc})" >&2
-    else
-      echo -e "\033[32;1msimenv: headless run OK\033[0m"
+      rm -f "$LOG"
+      exit $rc
     fi
-    exit $rc
+    # 스크립트가 예외로 죽었는데 Isaac Sim 이 0 을 돌려준 경우를 잡는다.
+    if grep -qE '^FAIL:|Traceback \(most recent call last\)|ROS2 Bridge startup failed' "$LOG"; then
+      echo "ERROR: headless run reported errors in its output (see above)" >&2
+      rm -f "$LOG"
+      exit 1
+    fi
+    rm -f "$LOG"
+    echo -e "\033[32;1msimenv: headless run OK\033[0m"
+    exit 0
     ;;
 
   shell)
-    echo "  bridge: ROS 2 ${ROS_DISTRO} internal libraries (ROS_DISTRO=${ROS_DISTRO})"
+    echo "  ros   : ROS 2 ${ROS_DISTRO} internal libraries (ros2-env 로 소싱됨)"
     echo "  hint  : /isaac-sim/python.sh -c 'import rclpy; print(rclpy.__file__)'"
-    docker run -it "${RUN_ARGS[@]}" --entrypoint /bin/bash "$TAG" "${ISAAC_ARGS[@]}"
+    docker run -it "${RUN_ARGS[@]}" --entrypoint /bin/bash "$TAG" \
+      -lc "${ROS_ENV} && exec bash $(printf '%q ' "${ISAAC_ARGS[@]}")"
     ;;
 esac
