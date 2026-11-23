@@ -158,16 +158,29 @@ case "$MODE" in
       echo "ERROR: DISPLAY is not set; use --mode stream for remote/headless hosts" >&2
       exit 1
     fi
-    if command -v xhost >/dev/null 2>&1; then xhost +local:docker >/dev/null 2>&1 || true; fi
+    if command -v xhost >/dev/null 2>&1; then
+      xhost +local:docker >/dev/null 2>&1 || true
+      xhost +local:root >/dev/null 2>&1 || true
+    fi
+    XAUTH="${XAUTHORITY:-${HOME}/.Xauthority}"
     RUN_ARGS+=(
       -v /tmp/.X11-unix:/tmp/.X11-unix:rw
-      -v "${HOME}/.Xauthority:/isaac-sim/.Xauthority:rw"
+      -v "${XAUTH}:/isaac-sim/.Xauthority:rw"
       -e "DISPLAY=${DISPLAY}"
+      -e "XAUTHORITY=/isaac-sim/.Xauthority"
       -e "QT_X11_NO_MITSHM=1"
     )
     echo "  starting Isaac Sim (GUI)..."
-    docker run -it "${RUN_ARGS[@]}" \
-      --entrypoint /bin/bash "$TAG" -lc "${ROS_ENV} && /isaac-sim/isaac-sim.sh $(printf '%q ' "${ISAAC_ARGS[@]}")"
+    # --script 가 있으면 그 파이썬 시나리오를 창을 띄운 채로 실행한다
+    #   (시나리오가 SimulationApp({"headless": False}) 를 생성).
+    #   없으면 Isaac Sim 에디터 전체를 띄운다.
+    if [[ -n "$RUN_SCRIPT" ]]; then
+      docker run -it "${RUN_ARGS[@]}" \
+        --entrypoint /bin/bash "$TAG" -lc "${ROS_ENV} && ${RUN_SCRIPT} $(printf '%q ' "${ISAAC_ARGS[@]}")"
+    else
+      docker run -it "${RUN_ARGS[@]}" \
+        --entrypoint /bin/bash "$TAG" -lc "${ROS_ENV} && /isaac-sim/isaac-sim.sh $(printf '%q ' "${ISAAC_ARGS[@]}")"
+    fi
     ;;
 
   stream)
