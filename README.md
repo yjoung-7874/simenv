@@ -19,7 +19,7 @@ Isaac Sim 은 **ROS 2 브리지 extension 과 내장 ROS 2 라이브러리**를 
 따라서 이미지에 ROS 2 를 설치/빌드할 필요가 없다. 필요한 것은:
 
 1. `ROS_DISTRO` 에 맞는 내장 라이브러리 경로 설정 (`/usr/local/bin/ros2-env`)
-2. 브리지 extension 활성화 (`--/isaac/startup/ros_bridge_extension=isaacsim.ros2.bridge`)
+2. 브리지 extension 활성화 (`--/isaac/startup/ros_bridge_extension=isaacsim.ros2.bridge`) — **호출자가 넘긴다**
 3. `--network=host` + DDS 설정 → 호스트/다른 컨테이너의 ROS 2 노드와 연결
 
 ```
@@ -78,7 +78,19 @@ ISAACSIM_HOST=<host-ip> ./scripts/env/run.sh --image isaac-ros2-5.0-jazzy --mode
 | 판정 | 사용자 종료 | 사용자 종료 | **exit code + timeout** | 사용자 종료 |
 | 대상 | 로컬 개발자 | 원격 개발자 | **CI** | 디버깅 |
 
-`gui`/`stream`/`headless` 는 모두 ROS 2 브리지 extension 을 켠 상태로 실행된다.
+## 경계: simenv 는 런처다
+
+`run.sh` 는 **컨테이너 런처**일 뿐이다. 어떤 시나리오를 실행하고 브리지
+extension 을 켤지는 시나리오 소유자(예: `mos/sim/run-sim.sh`)가 `--` 뒤 인자로 넘긴다.
+
+```bash
+./scripts/env/run.sh --image isaac-ros2-5.0-jazzy --mode headless \
+    --workspace ./sim --script "/isaac-sim/python.sh /workspace/bridge_smoke.py" \
+    -- --/isaac/startup/ros_bridge_extension=isaacsim.ros2.bridge
+```
+
+브리지가 필요 없으면 `--` 를 생략하면 된다. 이렇게 하면 simenv 는
+시나리오 내용을 몰라도 되고, 프로젝트가 자기 토픽/브리지 설정을 스스로 정한다.
 
 ### DDS 설정 (다중 NIC 환경)
 
