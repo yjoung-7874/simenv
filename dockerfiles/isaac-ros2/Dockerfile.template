@@ -1,0 +1,101 @@
+# simenv/dockerfiles/isaac-ros2/Dockerfile.template
+#
+# Isaac Sim 시뮬레이션 환경 (버전 매트릭스)
+#
+# 빌드 인자는 dockerfiles/catalog.yml 이 공급한다.
+#   docker build --build-arg ISAAC_VERSION=5.0.0 --build-arg ROS_DISTRO=jazzy ...
+# 또는 build-matrix.sh 를 사용한다.
+#
+# 설계 핵심
+#   Isaac Sim 은 ROS 2 브리지 extension(isaacsim.ros2.bridge)과 함께
+#   **내장 ROS 2 라이브러리**(humble / jazzy)를 이미 포함한다.
+#     /isaac-sim/exts/isaacsim.ros2.bridge/{humble,jazzy}/{lib,rclpy}
+#   따라서 이미지에 ROS 2 를 따로 설치하거나 빌드할 필요가 없다.
+#
+#   ROS_DISTRO 를 **설정하지 않으면** setup_ros_env.sh 가 OS 에 맞는 기본
+#   배포판(humble)의 내장 라이브러리 경로를 LD_LIBRARY_PATH 에 넣는다.
+#   jazzy 를 쓰려면 ros2-env 로 명시 지정한다. 통신은 DDS(--network=host)가
+#   담당하므로 호스트/다른 컨테이너의 ROS 2 노드와 그대로 연결된다.
+#
+#   베이스 이미지: nvcr.io/nvidia/isaac-sim:5.0.0
+#     → Ubuntu 22.04 (jammy), Python 3.11, root
+
+ARG ISAAC_VERSION=5.0.0
+FROM nvcr.io/nvidia/isaac-sim:${ISAAC_VERSION}
+
+ARG ROS_DISTRO=jazzy
+
+ENV DEBIAN_FRONTEND=noninteractive
+# 주의: ROS_DISTRO 를 ENV 로 고정하면 안 된다.
+#   setup_ros_env.sh 는 ROS_DISTRO 가 **비어 있을 때만** 내장 브리지
+#   라이브러리 경로를 LD_LIBRARY_PATH 에 추가한다. 값이 있으면 아무것도
+#   하지 않아 브리지 extension 이 libament_index_cpp.so 를 못 찾는다.
+#   따라서 배포판 선택은 실행 시점(run.sh 의 ros2-env)에서 넘긴다.
+# ENV ROS_DISTRO=...
+
+# ---------------------------------------------------------------------------
+# 개발 도구 (ROS 2 는 내장 라이브러리를 쓰므로 설치하지 않는다)
+# ---------------------------------------------------------------------------
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential cmake ninja-build git wget curl ca-certificates \
+        bash bash-completion locales vim tmux \
+        iproute2 iputils-ping net-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN locale-gen en_US en_US.UTF-8 \
+    && update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+ENV LANG=en_US.UTF-8
+
+# ---------------------------------------------------------------------------
+# 내장 ROS 2 라이브러리 확인 + 환경 설정 스크립트
+#
+#   Isaac Sim 의 setup_ros_env.sh 는 ROS_DISTRO 가 **비어 있을 때만** 동작하고
+#   LD_LIBRARY_PATH 만 설정한다. jazzy 내장 rclpy 는 site-packages 형태라
+#   PYTHONPATH 도 필요하므로, 배포판을 명시적으로 선택하는 스크립트를 둔다.
+# ---------------------------------------------------------------------------
+ARG ROS_DISTRO=jazzy
+
+RUN BRIDGE=/isaac-sim/exts/isaacsim.ros2.bridge; \
+    if [ ! -d "$BRIDGE/$ROS_DISTRO" ]; then \
+        echo "ERROR: internal ROS 2 '$ROS_DISTRO' libraries not found in $BRIDGE"; \
+        echo "  available: $(ls $BRIDGE | grep -E '^(humble|jazzy)$' | tr '\n' ' ')"; \
+        exit 1; \
+    fi; \
+    echo "OK: internal ROS 2 $ROS_DISTRO bridge libraries present"
+
+RUN cat > /usr/local/bin/ros2-env <<'EOF'
+#!/bin/bash
+# 내장 Isaac Sim ROS 2 브리지 라이브러리 환경 설정
+#   usage: source /usr/local/bin/ros2-env [humble|jazzy]
+BRIDGE=/isaac-sim/exts/isaacsim.ros2.bridge
+DISTRO="${1:-${ROS_DISTRO:-jazzy}}"
+if [ ! -d "$BRIDGE/$DISTRO" ]; then
+  echo "ERROR: unsupported ROS distro '$DISTRO' (available: $(ls $BRIDGE | grep -E '^(humble|jazzy)$' | tr '\n' ' '))" >&2
+  return 1 2>/dev/null || exit 1
+fi
+export ROS_DISTRO="$DISTRO"
+export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
+export LD_LIBRARY_PATH="$BRIDGE/$DISTRO/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export PYTHONPATH="$BRIDGE/$DISTRO/rclpy${PYTHONPATH:+:$PYTHONPATH}"
+export AMENT_PREFIX_PATH="$BRIDGE/$DISTRO${AMENT_PREFIX_PATH:+:$AMENT_PREFIX_PATH}"
+EOF
+RUN chmod +x /usr/local/bin/ros2-env \
+    && echo "source /usr/local/bin/ros2-env ${ROS_DISTRO}" >> /root/.bashrc
+
+# FastDDS 프로필 (다중 NIC 환경에서 인터페이스 선택 문제 방지)
+COPY fastdds.xml /etc/simenv/fastdds.xml
+
+# ---------------------------------------------------------------------------
+# Isaac Sim 캐시 디렉토리 (컨테이너 사용자 1234 기준, NVIDIA 공식 레이아웃)
+# ---------------------------------------------------------------------------
+RUN mkdir -p /isaac-sim/.cache /isaac-sim/.nv/ComputeCache /isaac-sim/kit/cache \
+             /isaac-sim/.nvidia-omniverse/logs /isaac-sim/.nvidia-omniverse/config \
+             /isaac-sim/.local/share/ov/data /isaac-sim/.local/share/ov/pkg \
+             /workspace \
+    && chown -R 1234:1234 /isaac-sim/.cache /isaac-sim/.nv /isaac-sim/kit/cache \
+             /isaac-sim/.nvidia-omniverse /isaac-sim/.local/share/ov /workspace
+
+WORKDIR /workspace
+
+CMD ["/bin/bash"]

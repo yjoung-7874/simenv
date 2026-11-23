@@ -1,0 +1,52 @@
+# simenv/dockerfiles/catalog.yml
+# 시뮬레이션 환경 카탈로그 (SSoT)
+#
+# 축(axis) 정의
+#   base        : 시뮬레이터 베이스 (isaac-sim)
+#   version     : 시뮬레이터 버전
+#   ros         : ROS 2 배포판
+#   image_name  : 실제 docker 이미지 이름 (태그는 <image_name>:<platform>)
+#
+# 지원하지 않는 조합은 build-matrix.sh 가 거부한다.
+# 조합을 추가하려면 이 파일만 수정하면 된다 (Dockerfile 수정 불필요).
+
+bases:
+  isaac-sim:
+    description: "NVIDIA Isaac Sim (Omniverse Kit 기반, GPU/X11 필요)"
+    base_image_template: "nvcr.io/nvidia/isaac-sim:{version}"
+    dockerfile_dir: isaac-ros2
+    requires: [gpu]
+    versions:
+      # 5.0: 오픈소스 GA. ROS 2 Jazzy / Humble 브리지 내장.
+      #      기본 조합: 5.0 x jazzy — devsys 의 ros2-jazzy 빌드 이미지와 정렬된다.
+      #      ROS 2 는 이미지에 설치하지 않는다: Isaac Sim 의 내장 브리지
+      #      라이브러리(/isaac-sim/exts/isaacsim.ros2.bridge/<distro>)를 그대로 쓴다.
+      "5.0.0":
+        ros: [jazzy, humble]
+        ubuntu: "22.04"
+        python: "3.11"
+        cuda: "12.8"
+        status: stable
+        default_ros: jazzy
+
+images:
+  # 카탈로그 키 -> 이미지 이름 매핑 (devsys parse_target.py 가 이 형식을 읽는다)
+  isaac-ros2-5.0-jazzy:
+    base: isaac-sim
+    version: "5.0.0"
+    ros: jazzy
+    image_name: isaac-ros2-5.0-jazzy
+    platforms: [linux/amd64]
+    runtime_modes: [gui, stream, headless]
+    interactive_shell: true
+    description: "Isaac Sim 5.0 + ROS 2 Jazzy (기본 권장, 소스 빌드) — devsys ros2-jazzy 와 ROS 버전 정렬"
+
+  isaac-ros2-5.0-humble:
+    base: isaac-sim
+    version: "5.0.0"
+    ros: humble
+    image_name: isaac-ros2-5.0-humble
+    platforms: [linux/amd64]
+    runtime_modes: [gui, stream, headless]
+    interactive_shell: true
+    description: "Isaac Sim 5.0 + ROS 2 Humble (jammy 바이너리 패키지)"
