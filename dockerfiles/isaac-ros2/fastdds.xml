@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  simenv/dockerfiles/isaac-ros2/fastdds.xml
+
+  FastDDS 프로필 — Isaac Sim 컨테이너가 호스트/다른 컨테이너의 ROS 2 노드와
+  통신할 수 있도록 인터페이스를 명시한다.
+
+  왜 필요한가:
+    호스트에 네트워크 인터페이스가 여러 개(docker bridge, VPN, WiFi 등)이면
+    FastDDS 가 잘못된 인터페이스를 골라 멀티캐스트 발견에 실패한다
+    (증상: 같은 컨테이너 내부 pub/sub 는 되는데 외부와는 전혀 통신 안 됨).
+
+  사용:
+    - 기본값(화이트리스트 없음): 모든 인터페이스 사용.
+      대부분의 단일 NIC 환경에서는 이대로 동작한다.
+    - 다중 NIC 환경: 아래 interfaceWhiteList 에 실제 LAN 주소를 넣는다.
+      예) <address>192.168.0.3</address>
+    - 실행 시 SIMENV_DDS_INTERFACE=<ip> 로 지정하면 run.sh 가 자동 생성한다.
+-->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <transport_descriptors>
+    <transport_descriptor>
+      <transport_id>udp_only</transport_id>
+      <type>UDPv4</type>
+      <!-- 다중 NIC 환경에서는 아래 주석을 풀고 실제 LAN 주소를 넣는다 -->
+      <!--
+      <interfaceWhiteList>
+        <address>192.168.0.3</address>
+      </interfaceWhiteList>
+      -->
+    </transport_descriptor>
+  </transport_descriptors>
+
+  <participant profile_name="udp_only" is_default_profile="true">
+    <rtps>
+      <userTransports>
+        <transport_id>udp_only</transport_id>
+      </userTransports>
+      <useBuiltinTransports>false</useBuiltinTransports>
+    </rtps>
+  </participant>
+</profiles>

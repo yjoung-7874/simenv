@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
 # simenv/scripts/env/run.sh
 #
-# Isaac Sim 시뮬레이션 환경 실행 (3가지 모드)
+# Isaac Sim 시뮬레이션 환경 실행 (ROS 2 브리지 활성화)
 #
+#   Isaac Sim 은 내장 ROS 2 브리지 라이브러리를 갖고 있으므로,
+#   이미지에 ROS 2 를 설치할 필요가 없다. ROS_DISTRO 만 맞추면 된다.
+#   통신은 DDS 가 담당하고 --network=host 로 호스트/다른 컨테이너와 연결된다.
+#
+# 모드:
 #   gui      : 로컬 디스플레이에 창을 띄운다 (개발자 로컬 검증)
 #   stream   : headless + WebRTC livestream (원격 개발자, 브라우저/클라이언트 접속)
 #   headless : 창 없이 스크립트만 실행하고 exit code 로 판정 (CI)
+#   shell    : 브리지가 설정된 대화형 bash (직접 명령 실행 / 디버깅)
 #
 # Usage:
-#   run.sh [-h] --image <key> [--mode gui|stream|headless]
+#   run.sh [-h] --image <key> [--mode gui|stream|headless|shell]
 #          [--workspace <host-dir>] [--script <container-path>] [--name <container-name>]
 #          [--cache-dir <host-dir>] [--timeout <sec>] [--] [extra isaac args...]
 #
@@ -21,6 +27,7 @@
 #
 # Examples:
 #   run.sh --image isaac-ros2-5.0-jazzy --mode gui
+#   run.sh --image isaac-ros2-5.0-jazzy --mode shell        # 브리지 설정된 셸
 #   run.sh --image isaac-ros2-5.0-jazzy --mode headless \
 #          --workspace ./scenarios --script /workspace/smoke.py
 
@@ -41,7 +48,7 @@ TIMEOUT=600
 ISAAC_ARGS=()
 
 print_usage() {
-  sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-0}"
 }
 
@@ -62,18 +69,18 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -z "$IMAGE_KEY" ]] && { echo "ERROR: --image is required (see build-matrix.sh --list)" >&2; print_usage 1; }
-case "$MODE" in gui|stream|headless) ;; *) echo "ERROR: invalid --mode '$MODE'" >&2; exit 1 ;; esac
+case "$MODE" in gui|stream|headless|shell) ;; *) echo "ERROR: invalid --mode '$MODE'" >&2; exit 1 ;; esac
 [[ -d "$WORKSPACE" ]] || { echo "ERROR: workspace not found: $WORKSPACE" >&2; exit 1; }
 if [[ "$MODE" == "headless" && -z "$RUN_SCRIPT" ]]; then
   echo "ERROR: --script is required in headless mode" >&2; exit 1
 fi
 
-# catalog 에서 이미지 이름 확인 (지원하지 않는 키는 여기서 거부)
-IMAGE_NAME="$(python3 - "$CATALOG" "$IMAGE_KEY" <<'PY'
+# catalog 에서 이미지 이름과 ROS 배포판 확인 (지원하지 않는 키는 여기서 거부)
+read -r IMAGE_NAME ROS_DISTRO <<< "$(python3 - "$CATALOG" "$IMAGE_KEY" <<'PY'
 import sys, yaml
 cat = yaml.safe_load(open(sys.argv[1]))
 img = (cat.get("images") or {}).get(sys.argv[2])
-print(img["image_name"] if img else "")
+print(f"{img['image_name']} {img['ros']}" if img else "")
 PY
 )"
 if [[ -z "$IMAGE_NAME" ]]; then
@@ -81,8 +88,6 @@ if [[ -z "$IMAGE_NAME" ]]; then
   exit 1
 fi
 
-# Isaac Sim 은 linux/amd64 전용
-PLATFORM="linux/amd64"
 TAG="${IMAGE_NAME}:linux_amd64"
 if ! docker image inspect "$TAG" >/dev/null 2>&1; then
   echo "ERROR: image ${TAG} not found. Build it first:" >&2
@@ -92,11 +97,14 @@ fi
 
 WORKSPACE="$(realpath "$WORKSPACE")"
 mkdir -p "${CACHE_DIR}"/{cache/main,cache/computecache,cache/kit,config,data,logs,pkg}
-# 컨테이너 사용자는 1234. 캐시 디렉토리 쓰기 권한을 맞춘다 (sudo 없이 가능한 경우만).
 chown -R 1234:1234 "${CACHE_DIR}" 2>/dev/null || true
+
+# Isaac Sim 실행 파일 + ROS 2 브리지 extension 활성화
+ISAAC_BRIDGE_FLAG="--/isaac/startup/ros_bridge_extension=isaacsim.ros2.bridge"
 
 # ---------------------------------------------------------------------------
 # 공통 docker run 인자
+#   --network=host : DDS 멀티캐스트로 호스트/다른 컨테이너의 ROS 2 노드와 연결
 # ---------------------------------------------------------------------------
 RUN_ARGS=(
   --rm
@@ -105,7 +113,10 @@ RUN_ARGS=(
   --privileged
   -e "ACCEPT_EULA=Y"
   -e "PRIVACY_CONSENT=Y"
-  -e "ROS_DISTRO=${ROS_DISTRO:-}"
+  -e "ROS_DISTRO=${ROS_DISTRO}"
+  -e "RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
+  -e "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}"
+  -e "FASTRTPS_DEFAULT_PROFILES_FILE=${FASTRTPS_DEFAULT_PROFILES_FILE:-/etc/simenv/fastdds.xml}"
   -v "${CACHE_DIR}/cache/main:/isaac-sim/.cache:rw"
   -v "${CACHE_DIR}/cache/computecache:/isaac-sim/.nv/ComputeCache:rw"
   -v "${CACHE_DIR}/cache/kit:/isaac-sim/kit/cache:rw"
@@ -118,11 +129,10 @@ RUN_ARGS=(
 
 [[ -n "$CONTAINER_NAME" ]] && RUN_ARGS+=(--name "$CONTAINER_NAME")
 
-echo -e "\033[32;1msimenv: ${IMAGE_NAME} (${MODE})\033[0m"
+echo -e "\033[32;1msimenv: ${IMAGE_NAME} (${MODE}, ROS 2 ${ROS_DISTRO} bridge)\033[0m"
 
 case "$MODE" in
   gui)
-    # 로컬 디스플레이 전용. 원격/VNC 에서는 stream 모드를 쓴다.
     if [[ -z "${DISPLAY:-}" ]]; then
       echo "ERROR: DISPLAY is not set; use --mode stream for remote/headless hosts" >&2
       exit 1
@@ -134,18 +144,20 @@ case "$MODE" in
       -e "DISPLAY=${DISPLAY}"
       -e "QT_X11_NO_MITSHM=1"
     )
-    docker run -it "${RUN_ARGS[@]}" --entrypoint /bin/bash "$TAG" "${ISAAC_ARGS[@]}"
+    echo "  starting Isaac Sim (GUI) with ROS 2 bridge..."
+    docker run -it "${RUN_ARGS[@]}" \
+      --entrypoint /isaac-sim/isaac-sim.sh "$TAG" "${ISAAC_BRIDGE_FLAG}" "${ISAAC_ARGS[@]}"
     ;;
 
   stream)
-    # headless + WebRTC. 브라우저(웹 뷰어) 또는 Isaac Sim Streaming Client 로 접속.
     RUN_ARGS+=(
       -e "ISAACSIM_HOST=${ISAACSIM_HOST:-127.0.0.1}"
       -e "ISAACSIM_SIGNAL_PORT=${ISAACSIM_SIGNAL_PORT:-49100}"
       -e "ISAACSIM_STREAM_PORT=${ISAACSIM_STREAM_PORT:-47998}"
     )
     echo "  stream: ${ISAACSIM_HOST:-127.0.0.1} (signal 49100 / media 47998)"
-    docker run -it "${RUN_ARGS[@]}" --entrypoint /bin/bash "$TAG" "${ISAAC_ARGS[@]}"
+    docker run -it "${RUN_ARGS[@]}" \
+      --entrypoint /isaac-sim/runheadless.sh "$TAG" -v "${ISAAC_BRIDGE_FLAG}" "${ISAAC_ARGS[@]}"
     ;;
 
   headless)
@@ -163,5 +175,11 @@ case "$MODE" in
       echo -e "\033[32;1msimenv: headless run OK\033[0m"
     fi
     exit $rc
+    ;;
+
+  shell)
+    echo "  bridge: ROS 2 ${ROS_DISTRO} internal libraries (ROS_DISTRO=${ROS_DISTRO})"
+    echo "  hint  : /isaac-sim/python.sh -c 'import rclpy; print(rclpy.__file__)'"
+    docker run -it "${RUN_ARGS[@]}" --entrypoint /bin/bash "$TAG" "${ISAAC_ARGS[@]}"
     ;;
 esac

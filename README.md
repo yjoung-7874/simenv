@@ -1,19 +1,41 @@
 # simenv
 
-시뮬레이션 검증 환경 (Isaac Sim + ROS 2). **버전 매트릭스**로 관리된다.
+시뮬레이션 검증 환경 (Isaac Sim + ROS 2 브리지). **버전 매트릭스**로 관리된다.
 
 - 이미지 정의: `dockerfiles/catalog.yml` (SSoT) + `dockerfiles/isaac-ros2/Dockerfile.template`
-- 실행: `scripts/env/run.sh` (gui / stream / headless 3모드)
+- 실행: `scripts/env/run.sh` (gui / stream / headless / shell)
 - devsys 의 `verify` 파이프라인에서 서브모듈로 참조된다
+
+## 핵심: ROS 2 를 설치하지 않는다
+
+Isaac Sim 은 **ROS 2 브리지 extension 과 내장 ROS 2 라이브러리**를 이미 포함한다.
+
+```
+/isaac-sim/exts/isaacsim.ros2.bridge/
+├── humble/{lib,rclpy}
+└── jazzy/{lib,rclpy}      ← 5.0 부터 jazzy 내장
+```
+
+따라서 이미지에 ROS 2 를 설치/빌드할 필요가 없다. 필요한 것은:
+
+1. `ROS_DISTRO` 에 맞는 내장 라이브러리 경로 설정 (`/usr/local/bin/ros2-env`)
+2. 브리지 extension 활성화 (`--/isaac/startup/ros_bridge_extension=isaacsim.ros2.bridge`)
+3. `--network=host` + DDS 설정 → 호스트/다른 컨테이너의 ROS 2 노드와 연결
+
+```
+[호스트 / 다른 컨테이너]              [Isaac Sim 컨테이너]
+  mos_pub (ros2-jazzy 산출물) ──DDS──▶ isaacsim.ros2.bridge
+  ros2 topic echo             ◀──DDS── (내장 jazzy 라이브러리)
+```
 
 ## 지원 매트릭스
 
-| 이미지 키 | Isaac Sim | ROS 2 | Ubuntu | 상태 |
-|---|---|---|---|---|
-| `isaac-ros2-5.0-jazzy` | 5.0.0 | **jazzy** | 24.04 | **기본 권장** |
-| `isaac-ros2-5.0-humble` | 5.0.0 | humble | 24.04 | 호환용 |
+| 이미지 키 | Isaac Sim | ROS 2 브리지 | 베이스 |
+|---|---|---|---|
+| `isaac-ros2-5.0-jazzy` | 5.0.0 | **jazzy (내장)** | Ubuntu 22.04 / Python 3.11 |
+| `isaac-ros2-5.0-humble` | 5.0.0 | humble (내장) | Ubuntu 22.04 / Python 3.11 |
 
-> 기본 조합은 **5.0 × jazzy** — devsys 의 `ros2-jazzy` 빌드 이미지와 정렬되어,
+> 기본 조합은 **5.0 × jazzy** — devsys 의 `ros2-jazzy` 빌드 이미지와 ROS 버전이 같아
 > jazzy 로 빌드한 산출물을 버전 불일치 없이 시뮬에서 검증할 수 있다.
 > Isaac Sim 5.0 부터 Isaac Sim 전용 extension 이 오픈소스로 공개되었다
 > (Omniverse Kit 일부는 closed source).
@@ -33,7 +55,10 @@ Isaac/ROS 조합이 실수로 28GB 이미지로 양산되는 일을 막는다.
 ## 실행
 
 ```bash
-# 개발자 로컬 (창을 띄워 직접 조작)
+# 브리지가 설정된 대화형 셸 (디버깅/직접 확인)
+./scripts/env/run.sh --image isaac-ros2-5.0-jazzy --mode shell
+
+# 개발자 로컬 (Isaac Sim GUI + 브리지)
 ./scripts/env/run.sh --image isaac-ros2-5.0-jazzy --mode gui
 
 # 원격 개발자 (WebRTC 스트리밍)
@@ -46,14 +71,23 @@ ISAACSIM_HOST=<host-ip> ./scripts/env/run.sh --image isaac-ros2-5.0-jazzy --mode
 
 ### 모드별 차이
 
-| | gui | stream | headless |
-|---|---|---|---|
-| 디스플레이 | 로컬 X11 (`DISPLAY`) | 없음 (WebRTC) | 없음 |
-| 판정 | 사용자 종료 | 사용자 종료 | **exit code + timeout** |
-| 대상 | 로컬 개발자 | 원격 개발자 | **CI** |
+| | gui | stream | headless | shell |
+|---|---|---|---|---|
+| 실행 | `isaac-sim.sh` | `runheadless.sh -v` | 스크립트 | bash |
+| 디스플레이 | 로컬 X11 | WebRTC | 없음 | 없음 |
+| 판정 | 사용자 종료 | 사용자 종료 | **exit code + timeout** | 사용자 종료 |
+| 대상 | 로컬 개발자 | 원격 개발자 | **CI** | 디버깅 |
 
-> Isaac Sim 공식 문서 기준, 컨테이너 **GUI 모드는 실제 로컬 디스플레이에서만** 동작한다
-> (원격/VNC/headless 에서는 Vulkan swapchain 초기화 실패). 원격은 `stream` 또는 `headless` 를 쓴다.
+`gui`/`stream`/`headless` 는 모두 ROS 2 브리지 extension 을 켠 상태로 실행된다.
+
+### DDS 설정 (다중 NIC 환경)
+
+호스트에 네트워크 인터페이스가 여러 개면 FastDDS 가 잘못된 인터페이스를 골라
+**외부 노드와 전혀 통신이 안 되는** 증상이 생긴다 (컨테이너 내부 pub/sub 는 정상).
+이미지에는 `/etc/simenv/fastdds.xml` 이 포함되어 있고 `run.sh` 가 기본으로 지정한다.
+
+특정 인터페이스를 강제하려면 `dockerfiles/isaac-ros2/fastdds.xml` 의
+`interfaceWhiteList` 주석을 풀고 실제 LAN 주소를 넣은 뒤 재빌드한다.
 
 ## Python 버전 제약 (중요)
 
@@ -71,10 +105,12 @@ Ubuntu 24.04 기준 Python 3.12 이므로, **시스템 ROS 를 source 한 채로
 simenv/
 ├── dockerfiles/
 │   ├── catalog.yml                      # 버전 매트릭스 SSoT
-│   ├── isaac-ros2/Dockerfile.template   # ARG 기반 공통 템플릿
+│   ├── isaac-ros2/
+│   │   ├── Dockerfile.template          # ARG 기반 공통 템플릿
+│   │   └── fastdds.xml                  # DDS 인터페이스 프로필
 │   └── build-matrix.sh                  # 지원 조합만 빌드
 └── scripts/env/
-    ├── run.sh                           # gui / stream / headless
+    ├── run.sh                           # gui / stream / headless / shell
     ├── env_enter.sh                     # 실행 중 컨테이너 접속
     └── entry/                           # 셸 설정 (zsh/oh-my-zsh/tmux)
 ```

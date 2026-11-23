@@ -17,11 +17,13 @@ bases:
     dockerfile_dir: isaac-ros2
     requires: [gpu]
     versions:
-      # 5.0: 오픈소스 GA. ROS 2 Jazzy 정식 지원 (Ubuntu 24.04 권장).
+      # 5.0: 오픈소스 GA. ROS 2 Jazzy / Humble 브리지 내장.
       #      기본 조합: 5.0 x jazzy — devsys 의 ros2-jazzy 빌드 이미지와 정렬된다.
+      #      ROS 2 는 이미지에 설치하지 않는다: Isaac Sim 의 내장 브리지
+      #      라이브러리(/isaac-sim/exts/isaacsim.ros2.bridge/<distro>)를 그대로 쓴다.
       "5.0.0":
         ros: [jazzy, humble]
-        ubuntu: "24.04"
+        ubuntu: "22.04"
         python: "3.11"
         cuda: "12.8"
         status: stable
@@ -37,7 +39,7 @@ images:
     platforms: [linux/amd64]
     runtime_modes: [gui, stream, headless]
     interactive_shell: true
-    description: "Isaac Sim 5.0 + ROS 2 Jazzy (기본 권장, Ubuntu 24.04) — devsys ros2-jazzy 와 정렬"
+    description: "Isaac Sim 5.0 + ROS 2 Jazzy (기본 권장, 소스 빌드) — devsys ros2-jazzy 와 ROS 버전 정렬"
 
   isaac-ros2-5.0-humble:
     base: isaac-sim
@@ -47,4 +49,4 @@ images:
     platforms: [linux/amd64]
     runtime_modes: [gui, stream, headless]
     interactive_shell: true
-    description: "Isaac Sim 5.0 + ROS 2 Humble (Ubuntu 22.04 호환용)"
+    description: "Isaac Sim 5.0 + ROS 2 Humble (jammy 바이너리 패키지)"

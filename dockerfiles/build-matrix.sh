@@ -105,7 +105,7 @@ build_one() {
     IFS=$'\t' read -r key image base ver ros cuda <<< "$e"
     [[ "$key" != "$want" ]] && continue
     found=true
-    echo -e "\033[32;1m=== building ${image}:${tag_name} (${base} ${ver}, ROS ${ros})\033[0m"
+    echo -e "\033[32;1m=== building ${image}:${tag_name} (${base} ${ver}, ROS ${ros} bridge)\033[0m"
     docker buildx build \
       --platform "$PLATFORM" \
       --build-arg "ISAAC_VERSION=${ver}" \
