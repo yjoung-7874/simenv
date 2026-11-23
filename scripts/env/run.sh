@@ -190,8 +190,16 @@ case "$MODE" in
       -e "ISAACSIM_STREAM_PORT=${ISAACSIM_STREAM_PORT:-47998}"
     )
     echo "  stream: ${ISAACSIM_HOST:-127.0.0.1} (signal 49100 / media 47998)"
-    docker run -it "${RUN_ARGS[@]}" \
-      --entrypoint /bin/bash "$TAG" -lc "${ROS_ENV} && /isaac-sim/runheadless.sh -v $(printf '%q ' "${ISAAC_ARGS[@]}")"
+    # --script 가 있으면 그 시나리오를 headless 로 실행하면서 livestream 을 켠다.
+    #   시나리오는 MOS_STREAM=1 을 보고 omni.kit.livestream.webrtc 를 활성화한다.
+    #   없으면 빈 스트리밍 에디터(runheadless.sh)를 띄운다.
+    if [[ -n "$RUN_SCRIPT" ]]; then
+      docker run -it "${RUN_ARGS[@]}" \
+        --entrypoint /bin/bash "$TAG" -lc "export MOS_STREAM=1 && ${ROS_ENV} && ${RUN_SCRIPT} $(printf '%q ' "${ISAAC_ARGS[@]}")"
+    else
+      docker run -it "${RUN_ARGS[@]}" \
+        --entrypoint /bin/bash "$TAG" -lc "${ROS_ENV} && /isaac-sim/runheadless.sh -v $(printf '%q ' "${ISAAC_ARGS[@]}")"
+    fi
     ;;
 
   headless)
