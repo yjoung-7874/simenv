@@ -184,12 +184,30 @@ case "$MODE" in
     ;;
 
   stream)
+    # Isaac Sim livestream(WebRTC) 설정.
+    #   ISAACSIM_HOST 는 simenv 의 편의 변수다. 실제로 Isaac 이 읽는 것은
+    #   /app/livestream/* 설정이며, 클라이언트는 signal 49100/TCP + media 47998/UDP
+    #   를 고정으로 사용한다. 따라서 미디어 포트를 47998 로 고정(fixedHostPort)하고,
+    #   ICE 가 광고할 주소를 publicEndpointAddress 로 지정해야 LAN 클라이언트가 붙는다.
+    #   (미지정 시 임의 포트/엉뚱한 NIC IP 를 광고해 NVST_CCE_DISCONNECTED 가 된다.)
+    signal_port="${ISAACSIM_SIGNAL_PORT:-49100}"
+    stream_port="${ISAACSIM_STREAM_PORT:-47998}"
+    stream_host="${ISAACSIM_HOST:-127.0.0.1}"
     RUN_ARGS+=(
-      -e "ISAACSIM_HOST=${ISAACSIM_HOST:-127.0.0.1}"
-      -e "ISAACSIM_SIGNAL_PORT=${ISAACSIM_SIGNAL_PORT:-49100}"
-      -e "ISAACSIM_STREAM_PORT=${ISAACSIM_STREAM_PORT:-47998}"
+      -e "ISAACSIM_HOST=${stream_host}"
+      -e "ISAACSIM_SIGNAL_PORT=${signal_port}"
+      -e "ISAACSIM_STREAM_PORT=${stream_port}"
+      -e "MOS_STREAM_WIDTH=${MOS_STREAM_WIDTH:-1920}"
+      -e "MOS_STREAM_HEIGHT=${MOS_STREAM_HEIGHT:-1080}"
     )
-    echo "  stream: ${ISAACSIM_HOST:-127.0.0.1} (signal 49100 / media 47998)"
+    ISAAC_ARGS+=(
+      "--/app/livestream/port=${signal_port}"
+      "--/app/livestream/publicEndpointAddress=${stream_host}"
+      "--/app/livestream/publicEndpointPort=${signal_port}"
+      "--/app/livestream/fixedHostPort=${stream_port}"
+    )
+    [[ "${SIM_STREAM_DEBUG:-0}" == "1" ]] && ISAAC_ARGS+=("--/app/livestream/logLevel=info")
+    echo "  stream: ${stream_host} (signal ${signal_port} / media ${stream_port}) ${MOS_STREAM_WIDTH:-1920}x${MOS_STREAM_HEIGHT:-1080}"
     # --script 가 있으면 그 시나리오를 headless 로 실행하면서 livestream 을 켠다.
     #   시나리오는 MOS_STREAM=1 을 보고 omni.kit.livestream.webrtc 를 활성화한다.
     #   없으면 빈 스트리밍 에디터(runheadless.sh)를 띄운다.
