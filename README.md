@@ -12,7 +12,6 @@
 |---|---|---|---|---|
 | `isaac-ros2-5.0-jazzy` | 5.0.0 | **jazzy** | 24.04 | **기본 권장** |
 | `isaac-ros2-5.0-humble` | 5.0.0 | humble | 24.04 | 호환용 |
-| `isaac-ros2-4.5-humble` | 4.5.0 | humble | 22.04 | 레거시 |
 
 > 기본 조합은 **5.0 × jazzy** — devsys 의 `ros2-jazzy` 빌드 이미지와 정렬되어,
 > jazzy 로 빌드한 산출물을 버전 불일치 없이 시뮬에서 검증할 수 있다.
@@ -58,7 +57,7 @@ ISAACSIM_HOST=<host-ip> ./scripts/env/run.sh --image isaac-ros2-5.0-jazzy --mode
 
 ## Python 버전 제약 (중요)
 
-Isaac Sim 은 자체 Python 런타임을 쓴다 (4.5=3.10, 5.0+=3.11). 시스템 ROS 2 는
+Isaac Sim 은 자체 Python 런타임을 쓴다 (5.0=3.11). 시스템 ROS 2 는
 Ubuntu 24.04 기준 Python 3.12 이므로, **시스템 ROS 를 source 한 채로 브리지를 쓰면 rclpy 가 깨진다**.
 
 - 기본 메시지 타입(`std_msgs`, `geometry_msgs` 등)만 쓰는 경우
@@ -76,7 +75,6 @@ simenv/
 │   └── build-matrix.sh                  # 지원 조합만 빌드
 └── scripts/env/
     ├── run.sh                           # gui / stream / headless
-    ├── env_build.sh                     # (레거시) 단일 Dockerfile 빌드
-    ├── env_run.sh                       # (레거시) isaac_ros2 전용 실행
+    ├── env_enter.sh                     # 실행 중 컨테이너 접속
     └── entry/                           # 셸 설정 (zsh/oh-my-zsh/tmux)
 ```

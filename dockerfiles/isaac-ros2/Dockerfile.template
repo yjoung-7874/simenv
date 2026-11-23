@@ -7,7 +7,7 @@
 # 또는 build-matrix.sh 를 사용한다.
 #
 # 주의 (Isaac Sim 제약)
-#   - Isaac Sim 은 자체 Python 런타임을 쓴다 (4.5=3.10, 5.0+=3.11).
+#   - Isaac Sim 은 자체 Python 런타임을 쓴다 (5.0 = Python 3.11).
 #     시스템 ROS 2(Python 3.12)를 그대로 source 하면 rclpy 가 깨진다.
 #     → 시스템 ROS 2 는 "외부 노드" 용으로만 두고, 브리지는 Isaac Sim 내장 라이브러리를 쓴다.
 #     (DDS 가 전송을 담당하므로 기본 메시지 타입은 이 조합으로 정상 동작)
