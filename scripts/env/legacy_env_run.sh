@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# LEGACY: 단일 Dockerfile 시절 스크립트. 신규 작업은 scripts/env/run.sh + dockerfiles/build-matrix.sh 를 쓴다.
 if [ $# -ne 2 ]; then
   echo "Usage: $0 image-name project-path"
   echo "  image-name: Dockerfile.{image-name}"
