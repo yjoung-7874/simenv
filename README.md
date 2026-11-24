@@ -117,6 +117,40 @@ extension 을 켤지는 시나리오 소유자(예: `mos/sim/run-sim.sh`)가 `--
 대신 `run.sh` 가 Isaac Sim 실행 직전에 `/usr/local/bin/ros2-env <distro>` 를
 소싱해 `LD_LIBRARY_PATH`/`PYTHONPATH`/`AMENT_PREFIX_PATH` 를 설정한다.
 
+## 세션: Isaac 과 ROS 피어를 분리한다
+
+시뮬레이터와 ROS 2 도구 환경은 **수명주기가 다르므로 컨테이너를 분리**한다.
+
+| | Isaac 컨테이너 | ROS 피어 컨테이너 |
+|---|---|---|
+| 목적 | 시뮬레이터 런타임 | `ros2` CLI / 빌드 산출물 실행 |
+| ROS | 브리지 번들 라이브러리만 | 정식 ROS 2 설치 |
+| 이미지 | simenv 카탈로그 키 | **docker 태그** (출처 무관) |
+| 런타임 필수 | ✅ | ❌ (없으면 no-ROS 모드) |
+
+`scripts/session/session.sh` 는 두 컨테이너를 하나의 DDS 세션으로 묶는다.
+**simenv 는 ROS 이미지의 출처를 모른다** — 태그 문자열만 받는다.
+
+```bash
+# Isaac + ROS 피어 (개발/CI)
+./scripts/session/session.sh up --ros-image ros:jazzy
+
+# Isaac 만 (no-ROS 모드) — 호스트의 mos dist 바이너리가 DDS 로 붙는다
+./scripts/session/session.sh up --no-ros
+
+# 이미 떠 있는 Isaac 에 ROS 피어만 붙인다
+./scripts/session/session.sh up --no-sim --ros-image ros:jazzy
+./scripts/session/session.sh exec -- ros2 topic list
+./scripts/session/session.sh status
+./scripts/session/session.sh down
+```
+
+DDS 계약(두 컨테이너 공통): `--network=host`, `ROS_DOMAIN_ID`,
+`RMW_IMPLEMENTATION`, 선택적 `FASTRTPS_DEFAULT_PROFILES_FILE`.
+
+> devsys 는 `configs/environments.yaml` 에서 역할→이미지를 해석해
+> `--sim-image` / `--ros-image` 로 넘긴다. simenv 는 그 파일을 모른다.
+
 ## Python 버전 제약 (중요)
 
 Isaac Sim 은 자체 Python 런타임을 쓴다 (5.0=3.11). 시스템 ROS 2 는
@@ -137,8 +171,10 @@ simenv/
 │   │   ├── Dockerfile.template          # ARG 기반 공통 템플릿
 │   │   └── fastdds.xml                  # DDS 인터페이스 프로필
 │   └── build-matrix.sh                  # 지원 조합만 빌드
-└── scripts/env/
-    ├── run.sh                           # gui / stream / headless / shell
-    ├── env_enter.sh                     # 실행 중 컨테이너 접속
-    └── entry/                           # 셸 설정 (zsh/oh-my-zsh/tmux)
+├── scripts/env/
+│   ├── run.sh                           # gui / stream / headless / shell
+│   ├── env_enter.sh                     # 실행 중 컨테이너 접속
+│   └── entry/                           # 셸 설정 (zsh/oh-my-zsh/tmux)
+└── scripts/session/
+    └── session.sh                       # Isaac + 선택적 ROS 피어 세션
 ```

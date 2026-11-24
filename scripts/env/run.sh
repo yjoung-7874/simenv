@@ -28,6 +28,8 @@
 #   --script     : headless 모드에서 실행할 명령 (컨테이너 셸 문자열)
 #   --cache-dir  : Isaac Sim 캐시 루트 (default: $HOME/docker/isaac-sim)
 #   --timeout    : headless 모드 타임아웃 (초, default: 600)
+#   --detach     : 백그라운드로 띄운다 (gui/stream/shell). --name 필요.
+#                  세션 런처(scripts/session/session.sh)가 사용한다.
 #   --           : 이후 인자는 Isaac Sim 에 그대로 전달된다
 #
 # Examples:
@@ -53,6 +55,7 @@ RUN_SCRIPT=""
 CONTAINER_NAME=""
 CACHE_DIR="${HOME}/docker/isaac-sim"
 TIMEOUT=600
+DETACH=0
 ISAAC_ARGS=()
 
 print_usage() {
@@ -70,6 +73,7 @@ while [[ $# -gt 0 ]]; do
     --name) CONTAINER_NAME="$2"; shift 2 ;;
     --cache-dir) CACHE_DIR="$2"; shift 2 ;;
     --timeout) TIMEOUT="$2"; shift 2 ;;
+    --detach) DETACH=1; shift ;;
     --) shift; ISAAC_ARGS+=("$@"); break ;;
     -*) echo "ERROR: unknown option '$1'" >&2; print_usage 1 ;;
     *) ISAAC_ARGS+=("$1"); shift ;;
@@ -82,6 +86,12 @@ case "$MODE" in gui|stream|headless|shell) ;; *) echo "ERROR: invalid --mode '$M
 if [[ "$MODE" == "headless" && -z "$RUN_SCRIPT" ]]; then
   echo "ERROR: --script is required in headless mode" >&2; exit 1
 fi
+if [[ "$DETACH" -eq 1 ]]; then
+  [[ "$MODE" == "headless" ]] && { echo "ERROR: --detach is not supported in headless mode" >&2; exit 1; }
+  [[ -n "$CONTAINER_NAME" ]] || { echo "ERROR: --detach requires --name" >&2; exit 1; }
+fi
+# -it for foreground, -d for detached
+if [[ "$DETACH" -eq 1 ]]; then RUN_IT=(-d); else RUN_IT=(-it); fi
 
 # catalog 에서 이미지 이름과 ROS 배포판 확인 (지원하지 않는 키는 여기서 거부)
 read -r IMAGE_NAME ROS_DISTRO <<< "$(python3 - "$CATALOG" "$IMAGE_KEY" <<'PY'
@@ -116,7 +126,6 @@ chown -R 1234:1234 "${CACHE_DIR}" 2>/dev/null || true
 #   --network=host : DDS 멀티캐스트로 호스트/다른 컨테이너의 ROS 2 노드와 연결
 # ---------------------------------------------------------------------------
 RUN_ARGS=(
-  --rm
   --gpus all
   --network=host
   --privileged
@@ -140,6 +149,8 @@ RUN_ARGS=(
 )
 
 [[ -n "$CONTAINER_NAME" ]] && RUN_ARGS+=(--name "$CONTAINER_NAME")
+# 포그라운드 실행은 종료 시 자동 제거, 백그라운드(--detach)는 세션이 관리한다.
+[[ "$DETACH" -eq 0 ]] && RUN_ARGS+=(--rm)
 
 echo -e "\033[32;1msimenv: ${IMAGE_NAME} (${MODE}, ROS 2 ${ROS_DISTRO} available)\033[0m"
 
@@ -175,10 +186,10 @@ case "$MODE" in
     #   (시나리오가 SimulationApp({"headless": False}) 를 생성).
     #   없으면 Isaac Sim 에디터 전체를 띄운다.
     if [[ -n "$RUN_SCRIPT" ]]; then
-      docker run -it "${RUN_ARGS[@]}" \
+      docker run "${RUN_IT[@]}" "${RUN_ARGS[@]}" \
         --entrypoint /bin/bash "$TAG" -lc "${ROS_ENV} && ${RUN_SCRIPT} $(printf '%q ' "${ISAAC_ARGS[@]}")"
     else
-      docker run -it "${RUN_ARGS[@]}" \
+      docker run "${RUN_IT[@]}" "${RUN_ARGS[@]}" \
         --entrypoint /bin/bash "$TAG" -lc "${ROS_ENV} && /isaac-sim/isaac-sim.sh $(printf '%q ' "${ISAAC_ARGS[@]}")"
     fi
     ;;
@@ -227,10 +238,10 @@ case "$MODE" in
     #   시나리오는 MOS_STREAM=1 을 보고 omni.kit.livestream.webrtc 를 활성화한다.
     #   없으면 빈 스트리밍 에디터(runheadless.sh)를 띄운다.
     if [[ -n "$RUN_SCRIPT" ]]; then
-      docker run -it "${RUN_ARGS[@]}" \
+      docker run "${RUN_IT[@]}" "${RUN_ARGS[@]}" \
         --entrypoint /bin/bash "$TAG" -lc "export MOS_STREAM=1 && ${ROS_ENV} && ${RUN_SCRIPT} $(printf '%q ' "${ISAAC_ARGS[@]}")"
     else
-      docker run -it "${RUN_ARGS[@]}" \
+      docker run "${RUN_IT[@]}" "${RUN_ARGS[@]}" \
         --entrypoint /bin/bash "$TAG" -lc "${ROS_ENV} && /isaac-sim/runheadless.sh -v $(printf '%q ' "${ISAAC_ARGS[@]}")"
     fi
     ;;
@@ -277,7 +288,14 @@ case "$MODE" in
   shell)
     echo "  ros   : ROS 2 ${ROS_DISTRO} internal libraries (ros2-env 로 소싱됨)"
     echo "  hint  : /isaac-sim/python.sh -c 'import rclpy; print(rclpy.__file__)'"
-    docker run -it "${RUN_ARGS[@]}" --entrypoint /bin/bash "$TAG" \
-      -lc "${ROS_ENV} && exec bash $(printf '%q ' "${ISAAC_ARGS[@]}")"
+    # --detach: TTY 가 없으므로 대화형 bash 대신 계속 살아있는 셸 컨테이너로 둔다
+    #           (session.sh 가 docker exec 로 접속한다).
+    if [[ "$DETACH" -eq 1 ]]; then
+      SHELL_CMD="${ROS_ENV} && trap : TERM INT; sleep infinity & wait"
+    else
+      SHELL_CMD="${ROS_ENV} && exec bash $(printf '%q ' "${ISAAC_ARGS[@]}")"
+    fi
+    docker run "${RUN_IT[@]}" "${RUN_ARGS[@]}" --entrypoint /bin/bash "$TAG" \
+      -lc "$SHELL_CMD"
     ;;
 esac
