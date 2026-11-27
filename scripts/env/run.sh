@@ -27,7 +27,8 @@
 #   --workspace  : 호스트 디렉토리 -> 컨테이너 /workspace (default: $PWD)
 #   --script     : headless 모드에서 실행할 명령 (컨테이너 셸 문자열)
 #   --cache-dir  : Isaac Sim 캐시 루트 (default: $HOME/docker/isaac-sim)
-#   --timeout    : headless 모드 타임아웃 (초, default: 600)
+#   --timeout    : headless 안전장치 (초, default: 0 = 제한 없음).
+#                  스크립트 종료가 정상 종료 조건이고, 이 값은 멈춤(hang) 방지용이다.
 #   --mount      : 추가 볼륨 마운트. 반복 가능. 예: --mount /data/scene:/data:ro
 #   --detach     : 백그라운드로 띄운다 (gui/stream/shell). --name 필요.
 #                  세션 런처(scripts/session/session.sh)가 사용한다.
@@ -55,7 +56,7 @@ WORKSPACE="$PWD"
 RUN_SCRIPT=""
 CONTAINER_NAME=""
 CACHE_DIR="${HOME}/docker/isaac-sim"
-TIMEOUT=600
+TIMEOUT=0
 DETACH=0
 ISAAC_ARGS=()
 EXTRA_MOUNTS=()
@@ -258,7 +259,11 @@ case "$MODE" in
     ;;
 
   headless)
-    echo "  script: ${RUN_SCRIPT} (timeout ${TIMEOUT}s)"
+    if [[ "$TIMEOUT" -gt 0 ]]; then
+      echo "  script: ${RUN_SCRIPT} (safety timeout ${TIMEOUT}s)"
+    else
+      echo "  script: ${RUN_SCRIPT} (no timeout — runs until the script exits)"
+    fi
     # 주의: `bash -lc "<script>" <args...>` 에서 첫 인자는 $0 가 되고 이후는 $1.. 이 된다.
     #       Isaac Sim 인자를 문자열 뒤에 붙이면 $0 로 먹혀 사라지므로
     #       ros2-env 소싱 + 스크립트 + 인자를 하나의 셸 문자열로 합쳐 전달한다.
@@ -272,9 +277,17 @@ case "$MODE" in
     #   하나다. 여기서는 (a) 와 치명 오류 패턴만 검사한다.
     LOG="$(mktemp)"
     set +e
-    timeout "$TIMEOUT" docker run "${RUN_ARGS[@]}" \
-      --entrypoint /bin/bash "$TAG" -lc "$CMD" 2>&1 | tee "$LOG"
-    rc=${PIPESTATUS[0]}
+    if [[ "$TIMEOUT" -gt 0 ]]; then
+      # 안전장치: 지정 시간을 넘기면 강제 종료한다. 정상 종료는 스크립트 exit code.
+      timeout "$TIMEOUT" docker run "${RUN_ARGS[@]}" \
+        --entrypoint /bin/bash "$TAG" -lc "$CMD" 2>&1 | tee "$LOG"
+      rc=${PIPESTATUS[0]}
+    else
+      # 제한 없음: 스크립트가 끝나거나 사용자가 멈출 때까지 실행한다.
+      docker run "${RUN_ARGS[@]}" \
+        --entrypoint /bin/bash "$TAG" -lc "$CMD" 2>&1 | tee "$LOG"
+      rc=${PIPESTATUS[0]}
+    fi
     set -e
     if [[ $rc -eq 124 ]]; then
       echo "ERROR: headless run timed out after ${TIMEOUT}s" >&2
