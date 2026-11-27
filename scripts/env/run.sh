@@ -299,7 +299,9 @@ case "$MODE" in
       exit $rc
     fi
     # 스크립트가 예외로 죽었는데 Isaac Sim 이 0 을 돌려준 경우를 잡는다.
-    if grep -qE '^FAIL:|Traceback \(most recent call last\)|ROS2 Bridge startup failed' "$LOG"; then
+    # 주의: extension teardown 등에서 나오는 비치명 Traceback 까지 잡으면 오탐이 난다.
+    #       시나리오의 실패 신호(FAIL:)와 실제 크래시/브리지 실패만 본다.
+    if grep -qE '^FAIL:|ROS2 Bridge startup failed|Segmentation fault|Crash detected in pid' "$LOG"; then
       echo "ERROR: headless run reported errors in its output (see above)" >&2
       rm -f "$LOG"
       exit 1
