@@ -67,6 +67,10 @@ ISAACSIM_HOST=<host-ip> ./scripts/env/run.sh --image isaac-ros2-5.0-jazzy --mode
 # CI (headless, exit code 로 판정)
 ./scripts/env/run.sh --image isaac-ros2-5.0-jazzy --mode headless \
     --workspace ./scenarios --script /workspace/smoke.py --timeout 600
+
+# 외부 데이터 디렉터리를 추가 마운트 (반복 가능, host:container[:ro])
+./scripts/env/run.sh --image isaac-ros2-5.0-jazzy --mode gui \
+    --mount /data/MOS_TEST_1117:/data:ro
 ```
 
 ### 모드별 차이

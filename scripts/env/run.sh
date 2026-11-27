@@ -20,7 +20,7 @@
 # Usage:
 #   run.sh [-h] --image <key> [--mode gui|stream|headless|shell]
 #          [--workspace <host-dir>] [--script <container-path>] [--name <container-name>]
-#          [--cache-dir <host-dir>] [--timeout <sec>] [--] [extra isaac args...]
+#          [--cache-dir <host-dir>] [--timeout <sec>] [--mount <host:container[:ro]>]...
 #
 #   --image      : catalog.yml 의 이미지 키 (예: isaac-ros2-5.0-jazzy)
 #   --mode       : 실행 모드 (default: gui)
@@ -28,6 +28,7 @@
 #   --script     : headless 모드에서 실행할 명령 (컨테이너 셸 문자열)
 #   --cache-dir  : Isaac Sim 캐시 루트 (default: $HOME/docker/isaac-sim)
 #   --timeout    : headless 모드 타임아웃 (초, default: 600)
+#   --mount      : 추가 볼륨 마운트. 반복 가능. 예: --mount /data/scene:/data:ro
 #   --detach     : 백그라운드로 띄운다 (gui/stream/shell). --name 필요.
 #                  세션 런처(scripts/session/session.sh)가 사용한다.
 #   --           : 이후 인자는 Isaac Sim 에 그대로 전달된다
@@ -57,9 +58,10 @@ CACHE_DIR="${HOME}/docker/isaac-sim"
 TIMEOUT=600
 DETACH=0
 ISAAC_ARGS=()
+EXTRA_MOUNTS=()
 
 print_usage() {
-  sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-0}"
 }
 
@@ -73,6 +75,7 @@ while [[ $# -gt 0 ]]; do
     --name) CONTAINER_NAME="$2"; shift 2 ;;
     --cache-dir) CACHE_DIR="$2"; shift 2 ;;
     --timeout) TIMEOUT="$2"; shift 2 ;;
+    --mount) EXTRA_MOUNTS+=("$2"); shift 2 ;;
     --detach) DETACH=1; shift ;;
     --) shift; ISAAC_ARGS+=("$@"); break ;;
     -*) echo "ERROR: unknown option '$1'" >&2; print_usage 1 ;;
@@ -83,6 +86,11 @@ done
 [[ -z "$IMAGE_KEY" ]] && { echo "ERROR: --image is required (see build-matrix.sh --list)" >&2; print_usage 1; }
 case "$MODE" in gui|stream|headless|shell) ;; *) echo "ERROR: invalid --mode '$MODE'" >&2; exit 1 ;; esac
 [[ -d "$WORKSPACE" ]] || { echo "ERROR: workspace not found: $WORKSPACE" >&2; exit 1; }
+# 추가 마운트는 host:container[:opts] 형식이며 host 경로가 존재해야 한다.
+for m in "${EXTRA_MOUNTS[@]}"; do
+  host_path="${m%%:*}"
+  [[ -e "$host_path" ]] || { echo "ERROR: mount host path not found: $host_path" >&2; exit 1; }
+done
 if [[ "$MODE" == "headless" && -z "$RUN_SCRIPT" ]]; then
   echo "ERROR: --script is required in headless mode" >&2; exit 1
 fi
@@ -147,6 +155,9 @@ RUN_ARGS=(
   -v "${CACHE_DIR}/pkg:/isaac-sim/.local/share/ov/pkg:rw"
   -v "${WORKSPACE}:/workspace:rw"
 )
+for m in "${EXTRA_MOUNTS[@]}"; do
+  RUN_ARGS+=(-v "$m")
+done
 
 [[ -n "$CONTAINER_NAME" ]] && RUN_ARGS+=(--name "$CONTAINER_NAME")
 # 포그라운드 실행은 종료 시 자동 제거, 백그라운드(--detach)는 세션이 관리한다.
