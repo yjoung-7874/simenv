@@ -65,6 +65,8 @@ Isaac/ROS 조합이 실수로 28GB 이미지로 양산되는 일을 막는다.
 ISAACSIM_HOST=<host-ip> ./scripts/env/run.sh --image isaac-ros2-5.0-jazzy --mode stream
 
 # CI (headless, exit code 로 판정)
+#   기본 timeout 0 = 제한 없음. 스크립트 종료가 정상 조건이고,
+#   --timeout N 은 멈춤(hang) 방지용 안전장치다.
 ./scripts/env/run.sh --image isaac-ros2-5.0-jazzy --mode headless \
     --workspace ./scenarios --script /workspace/smoke.py --timeout 600
 
